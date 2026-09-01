@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# SQLite database (runtime data — do not commit)
+*.db
+*.db-shm
+*.db-wal
+
+# IDE & OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# PyQt6 / Qt
+*.qmlc
+*.jsc
+
+# CUDA / PyTorch artifacts
+*.pt
+*.pth
+*.onnx
+
+# Logs
+*.log
+
+# Frontend node_modules (if ever used)
+node_modules/
+frontend/node_modules/
+
+# Distribution / packaging
+*.spec
+dist/

@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Interceptor GCS — Live Dashboard</title>
+  <meta name="description" content="Real-time Ground Control Station dashboard for Interceptor UAV — live video feed, telemetry, compass, and minimap." />
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet" />
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <!-- App styles -->
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ═══════════════════════════ HEADER ═══════════════════════════════════ -->
+  <header id="header">
+    <div class="header-brand">
+      <!-- Drone icon SVG -->
+      <div class="brand-icon">
+        <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <!-- Drone body -->
+          <rect x="13" y="13" width="6" height="6" rx="1" fill="#00ff88" opacity="0.9"/>
+          <!-- Arms -->
+          <line x1="16" y1="16" x2="4"  y2="4"  stroke="#00ff88" stroke-width="1.5" opacity="0.7"/>
+          <line x1="16" y1="16" x2="28" y2="4"  stroke="#00ff88" stroke-width="1.5" opacity="0.7"/>
+          <line x1="16" y1="16" x2="4"  y2="28" stroke="#00ff88" stroke-width="1.5" opacity="0.7"/>
+          <line x1="16" y1="16" x2="28" y2="28" stroke="#00ff88" stroke-width="1.5" opacity="0.7"/>
+          <!-- Rotors -->
+          <circle cx="4"  cy="4"  r="3" stroke="#00ff88" stroke-width="1.2" opacity="0.8"/>
+          <circle cx="28" cy="4"  r="3" stroke="#00ff88" stroke-width="1.2" opacity="0.8"/>
+          <circle cx="4"  cy="28" r="3" stroke="#00ff88" stroke-width="1.2" opacity="0.8"/>
+          <circle cx="28" cy="28" r="3" stroke="#00ff88" stroke-width="1.2" opacity="0.8"/>
+        </svg>
+      </div>
+      <div>
+        <div class="brand-title">INTERCEPTOR</div>
+        <div class="brand-subtitle">GROUND CONTROL STATION v1.0</div>
+      </div>
+    </div>
+
+    <div class="header-center">
+      <button id="modeBadge" class="mode-badge autonomous" onclick="toggleMode()" title="Click to toggle flight mode">
+        <span id="modeIcon">&#9654;</span> AUTONOMOUS
+      </button>
+      <span id="headerClock" class="header-time">--:--:--</span>
+    </div>
+
+    <div class="header-right">
+      <div class="conn-status">
+        <div id="connDot" class="conn-dot"></div>
+        <span id="connLabel">DISCONNECTED</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ═══════════════════════════ MAIN ════════════════════════════════════ -->
+  <main id="main">
+
+    <!-- VIDEO PANEL ──────────────────────────────────────────────────────── -->
+    <section id="video-panel" aria-label="Live Camera Feed">
+      <img
+        id="videoFeed"
+        src="/video_feed"
+        alt="Live drone camera feed"
+        onerror="handleVideoError()"
+      />
+      <canvas id="hudCanvas"></canvas>
+
+      <div class="video-badge">
+        <span class="video-res-label">1280×720 · 30FPS</span>
+        <span class="video-res-label" id="fpsCounter">-- FPS</span>
+      </div>
+    </section>
+
+    <!-- SIDEBAR ──────────────────────────────────────────────────────────── -->
+    <aside id="sidebar">
+
+      <!-- Telemetry grid -->
+      <div class="panel-card" id="telem-panel">
+        <div class="panel-card-title">Flight Telemetry</div>
+        <div id="telemetry-grid">
+
+          <!-- Altitude -->
+          <div class="telem-card altitude">
+            <span class="telem-label">Altitude</span>
+            <span class="telem-value" id="valAltitude">---</span>
+            <span class="telem-unit">METRES AGL</span>
+          </div>
+
+          <!-- Speed -->
+          <div class="telem-card speed">
+            <span class="telem-label">Speed</span>
+            <span class="telem-value" id="valSpeed">---</span>
+            <span class="telem-unit">KM/H</span>
+          </div>
+
+          <!-- Heading -->
+          <div class="telem-card heading">
+            <span class="telem-label">Heading</span>
+            <span class="telem-value" id="valHeading">---°</span>
+            <span class="telem-unit" id="valHeadingDir">---</span>
+          </div>
+
+          <!-- Vertical Speed -->
+          <div class="telem-card vspeed">
+            <span class="telem-label">V·Speed</span>
+            <span class="telem-value" id="valVspeed">---</span>
+            <span class="telem-unit">M/S</span>
+          </div>
+
+          <!-- Battery (full width) -->
+          <div class="telem-card battery" style="grid-column: 1/-1;">
+            <span class="telem-label">Battery</span>
+            <span class="telem-value" id="valBattery">---%</span>
+            <div class="battery-wrap">
+              <div class="battery-bar-bg">
+                <div class="battery-bar-fill high" id="batteryBar" style="width:100%"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Signal (full width) -->
+          <div class="telem-card signal" style="grid-column: 1/-1; flex-direction: row; align-items: center; justify-content: space-between;">
+            <div>
+              <span class="telem-label">Signal</span>
+              <span class="telem-value" style="font-size:1.1rem;" id="valSignal">---%</span>
+            </div>
+            <div class="signal-bars" id="signalBars">
+              <div class="signal-bar" data-bar="1"></div>
+              <div class="signal-bar" data-bar="2"></div>
+              <div class="signal-bar" data-bar="3"></div>
+              <div class="signal-bar" data-bar="4"></div>
+              <div class="signal-bar" data-bar="5"></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Compass -->
+      <div class="panel-card" id="compass-panel">
+        <div class="panel-card-title">Compass</div>
+        <div style="display:flex; align-items:center; gap:16px; justify-content:center;">
+          <div class="compass-container">
+            <!-- SVG compass rose — built by compass.js -->
+            <svg id="compass-svg" viewBox="0 0 130 130" xmlns="http://www.w3.org/2000/svg"></svg>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+            <div class="compass-heading-display" id="compassHeading">000°</div>
+            <div class="compass-dir-display"    id="compassDir">N</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Detections -->
+      <div class="panel-card" id="detections-panel">
+        <div class="panel-card-title">Active Detections</div>
+        <div id="detection-list">
+          <div class="detection-item" style="color:var(--text-dim); justify-content:center;">
+            Awaiting data…
+          </div>
+        </div>
+      </div>
+
+      <!-- Minimap -->
+      <div class="panel-card" id="map-panel" style="flex:1; display:flex; flex-direction:column;">
+        <div class="panel-card-title">Minimap · GPS Trail</div>
+        <div id="minimap" style="flex:1; min-height:160px;"></div>
+      </div>
+
+    </aside>
+  </main>
+
+  <!-- ═══════════════════════════ STATUS BAR ═══════════════════════════════ -->
+  <footer id="statusbar">
+    <span class="status-gps" id="statusGps">GPS: ---.------- / ---.-------</span>
+    <span id="statusDist">DIST: --- m</span>
+    <span id="statusMsg">SYSTEM INITIALISING…</span>
+    <span id="statusTime">UTC --:--:--</span>
+  </footer>
+
+</div><!-- /#app -->
+
+<!-- ═══════════════════════════ SCRIPTS ════════════════════════════════════ -->
+<!-- Leaflet -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<!-- App modules (order matters) -->
+<script src="/static/js/compass.js"></script>
+<script src="/static/js/video.js"></script>
+<script src="/static/js/telemetry.js"></script>
+<script src="/static/js/minimap.js"></script>
+<script src="/static/js/app.js"></script>
+
+</body>
+</html>
