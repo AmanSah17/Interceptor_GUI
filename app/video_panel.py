@@ -44,6 +44,7 @@ class VideoPanel(QWidget):
         self._roll     : float          = 0.0
         self._fps      : float          = 0.0
         self._frame_ts : list[float]    = []
+        self._is_connected: bool        = False
 
     # ── Public update methods ─────────────────────────────────────────────────
     def set_frame(self, frame: np.ndarray):
@@ -66,6 +67,10 @@ class VideoPanel(QWidget):
     def set_horizon(self, pitch: float, roll: float):
         self._pitch = pitch
         self._roll  = roll
+
+    def set_stream_status(self, is_connected: bool):
+        self._is_connected = is_connected
+        self.update()
 
     # ── Qt painting ───────────────────────────────────────────────────────────
     def paintEvent(self, event):
@@ -97,6 +102,14 @@ class VideoPanel(QWidget):
         scan_col = QColor(0, 255, 136, 12)
         for y in range(0, H, 4):
             p.fillRect(0, y, W, 1, scan_col)
+            
+        # ── Offline Overlay ──────────────────────────────────────────────────
+        if not self._is_connected:
+            p.fillRect(0, 0, W, H, QColor(0, 0, 0, 180))
+            p.setPen(QPen(QColor("#ff3355"), 2))
+            p.setFont(QFont("Consolas", 18, QFont.Weight.Bold))
+            p.drawText(QRect(0, 0, W, H), Qt.AlignmentFlag.AlignCenter,
+                       "SIGNAL LOST\n\nRECONNECTING...")
 
         # ── Corner brackets ──────────────────────────────────────────────────
         self._draw_corner_brackets(p, W, H)
@@ -244,3 +257,9 @@ class VideoPanel(QWidget):
         p.setPen(QPen(ACCENT, 1))
         p.setFont(QFont("Consolas", 8))
         p.drawText(cx - 10, H - 15, "AH")
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        for child in self.children():
+            if type(child).__name__ == "FloatingMapWidget":
+                child.move(self.width() - child.width() - 16, self.height() - child.height() - 16)

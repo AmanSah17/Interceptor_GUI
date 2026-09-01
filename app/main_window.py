@@ -24,7 +24,8 @@ import time
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QLabel, QPushButton, QProgressBar, QListWidget, QListWidgetItem,
-    QSplitter, QFrame, QSizePolicy, QStatusBar, QScrollArea
+    QSplitter, QFrame, QSizePolicy, QStatusBar, QScrollArea,
+    QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView
 )
 from PyQt6.QtCore    import Qt, QTimer, pyqtSlot
 from PyQt6.QtGui     import QColor, QFont, QIcon, QPalette
@@ -32,7 +33,7 @@ from PyQt6.QtGui     import QColor, QFont, QIcon, QPalette
 # Local widgets
 from video_panel      import VideoPanel
 from compass_widget   import CompassWidget
-from minimap_widget   import MinimapWidget
+from minimap_widget   import FloatingMapWidget as MinimapWidget
 from workers          import TelemetryWorker, VideoWorker
 
 # Backend
@@ -83,7 +84,7 @@ class TelemetryCard(QFrame):
         self.setStyleSheet(f"""
             QFrame {{
                 background: {BG_CARD};
-                border: 1px solid rgba(0,255,136,0.13);
+                border: 1px solid rgba(0,255,136,0.3);
                 border-radius: 4px;
             }}
         """)
@@ -218,6 +219,9 @@ class MainWindow(QMainWindow):
         self._video = VideoPanel()
         layout.addWidget(self._video, stretch=65)
 
+        # Floating Minimap over video panel
+        self._minimap = MinimapWidget(self._video)
+
         # Sidebar (right)
         sidebar = self._build_sidebar()
         layout.addWidget(sidebar, stretch=35)
@@ -346,7 +350,7 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(compass_card)
 
-        # ── Detection list ─────────────────────────────────────────────────
+        # ── Detection Table ────────────────────────────────────────────────
         det_card = _card()
         det_layout = QVBoxLayout(det_card)
         det_layout.setContentsMargins(10, 8, 10, 10)
@@ -356,32 +360,35 @@ class MainWindow(QMainWindow):
             f"color:{TEXT_DIM};font-family:Consolas;font-size:9px;letter-spacing:3px;"
         )
         det_layout.addWidget(det_title)
-        self._det_list = QListWidget()
-        self._det_list.setFixedHeight(100)
-        self._det_list.setStyleSheet(f"""
-            QListWidget {{background:transparent;border:none;
-                          font-family:Consolas;font-size:10px;color:#e0ffe8;}}
-            QListWidget::item {{background:rgba(0,255,136,0.04);
-                                border:1px solid rgba(0,255,136,0.10);
-                                border-radius:3px;padding:3px 6px;margin:1px 0;}}
+        
+        self._det_table = QTableWidget(0, 3)
+        self._det_table.setFixedHeight(120)
+        self._det_table.setHorizontalHeaderLabels(["Target", "Conf", "Coords"])
+        self._det_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self._det_table.verticalHeader().setVisible(False)
+        self._det_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._det_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self._det_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self._det_table.setStyleSheet(f"""
+            QTableWidget {{
+                background:transparent;
+                border:1px solid rgba(0,255,136,0.15);
+                font-family:Consolas;font-size:10px;color:#e0ffe8;
+                gridline-color: rgba(0,255,136,0.1);
+            }}
+            QHeaderView::section {{
+                background-color: {BG_CARD};
+                color: {TEXT_DIM};
+                border: 1px solid rgba(0,255,136,0.1);
+                font-family:Consolas;font-size:9px;
+            }}
+            QTableWidget::item:selected {{
+                background: rgba(0,255,136,0.2);
+                color: #ffffff;
+            }}
         """)
-        det_layout.addWidget(self._det_list)
+        det_layout.addWidget(self._det_table)
         layout.addWidget(det_card)
-
-        # ── Minimap ────────────────────────────────────────────────────────
-        map_card = _card()
-        map_layout = QVBoxLayout(map_card)
-        map_layout.setContentsMargins(10, 8, 10, 10)
-        map_layout.setSpacing(4)
-        map_title = QLabel("▌ MINIMAP  ·  GPS TRAIL")
-        map_title.setStyleSheet(
-            f"color:{TEXT_DIM};font-family:Consolas;font-size:9px;letter-spacing:3px;"
-        )
-        map_layout.addWidget(map_title)
-        self._minimap = MinimapWidget()
-        self._minimap.setMinimumHeight(180)
-        map_layout.addWidget(self._minimap, stretch=1)
-        layout.addWidget(map_card, stretch=1)
 
         inner.setLayout(layout)
         scroll.setWidget(inner)
@@ -418,14 +425,17 @@ class MainWindow(QMainWindow):
         # Video
         self._video_worker = VideoWorker()
         self._video_worker.frame_ready.connect(self._video.set_frame)
+        self._video_worker.stream_status.connect(self._on_stream_status)
         self._video_worker.start()
-
-        # Mark connected
-        self._set_connected(True)
 
     # =========================================================================
     # Slots
     # =========================================================================
+    @pyqtSlot(bool, float)
+    def _on_stream_status(self, connected: bool, fps: float):
+        self._set_connected(connected, fps)
+        self._video.set_stream_status(connected)
+
     @pyqtSlot(dict)
     def _on_telemetry(self, data: dict):
         alt  = data['altitude']
@@ -477,18 +487,20 @@ class MainWindow(QMainWindow):
         # Bounding boxes
         self._video.set_boxes(data.get('boxes', []))
 
-        # Detection list
+        # Detection table
         boxes = data.get('boxes', [])
-        self._det_list.clear()
+        self._det_table.setRowCount(0)
         if boxes:
-            for b in boxes:
-                item = QListWidgetItem(
-                    f"  {b['label']:<12}  {int(b['conf']*100):>3}%  "
-                    f"[{b['x']:.2f},{b['y']:.2f}]"
-                )
-                self._det_list.addItem(item)
-        else:
-            self._det_list.addItem("  No targets detected")
+            self._det_table.setRowCount(len(boxes))
+            for i, b in enumerate(boxes):
+                t_item = QTableWidgetItem(f" {b['label']}")
+                c_item = QTableWidgetItem(f"{int(b['conf']*100)}%")
+                c_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                xy_item = QTableWidgetItem(f"[{b['x']:.2f}, {b['y']:.2f}]")
+                xy_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                self._det_table.setItem(i, 0, t_item)
+                self._det_table.setItem(i, 1, c_item)
+                self._det_table.setItem(i, 2, xy_item)
 
         # Minimap
         self._minimap.update_position(data['lat'], data['lon'], hdg)
@@ -535,14 +547,14 @@ class MainWindow(QMainWindow):
                 QPushButton:pressed {{ background:rgba(255,179,0,0.35); }}
             """)
 
-    def _set_connected(self, state: bool):
+    def _set_connected(self, state: bool, fps: float = 0.0):
         if state:
             self._conn_dot.setStyleSheet(f"color:{ACCENT};font-size:10px;")
-            self._conn_lbl.setText("LIVE")
+            self._conn_lbl.setText(f"LIVE ({int(fps)} FPS)")
             self._conn_lbl.setStyleSheet(f"color:{ACCENT};font-family:Consolas;font-size:9px;letter-spacing:2px;")
         else:
             self._conn_dot.setStyleSheet(f"color:{DANGER};font-size:10px;")
-            self._conn_lbl.setText("OFFLINE")
+            self._conn_lbl.setText("OFFLINE / RECONNECTING")
             self._conn_lbl.setStyleSheet(f"color:{TEXT_DIM};font-family:Consolas;font-size:9px;letter-spacing:2px;")
 
     def _tick_clock(self):
